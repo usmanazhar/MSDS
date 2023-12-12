@@ -1,0 +1,234 @@
+---
+title: "NYPD_Shooting_Analysis"
+author: ''
+date: '2023-08-10'
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+always_allow_html: yes
+editor_options:
+  markdown:
+    wrap: sentence
+---
+
+```{r setup, echo=FALSE, message=FALSE,warnings=FALSE }
+library(tidyverse)
+library(rmarkdown)
+```
+
+## NYPD DATA SCIENCE SOLUTION
+
+This is a R markdown document, analyzing the NYPD Shooting data set.This data set is taken from public available data , see this link for data .
+<https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv>
+
+When you check the **NYPD** data set it contains 21 variables (columns) and 27312 rows.
+This is a breakdown of every shooting incident that occurred in NYC going back to 2006 through the end of the previous calendar year.
+Each record represents a shooting incident in NYC and includes information about the event, the location and time of occurrence.
+In addition, information related to suspect and victim demographics is also included.
+
+```{r nypd, echo=FALSE,message=FALSE,warnings=FALSE}
+NYPD_Data_Url <-"https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv"
+NYPD_Data<- read_csv(NYPD_Data_Url)
+```
+
+### Overview
+
+The NYPD Data set once read to data frame, from the summary output above , we can see that it contains
+
+-   OCCUR_DATE - Exact date of the shooting incident.
+-   OCCUR_TIME - Exact time of the shooting incident.
+-   BORO - Borough where the shooting incident occurred.
+-   PRECINCT - Precinct where the shooting incident occurred.
+-   JURISDICTION_Code -Jurisdiction where the shooting incident occurred.
+
+And some columns related to the Demographics of Victims, like Victims Age Group, Victims Sex, likewise the Perpetrator's Age group, Sex and Race.
+
+And additionally some location details such longitude and latitude.
+
+### Solution Approach
+
+Based on the available data set, we can apply data science techniques to do some analysis on the shooting incidents, it could be either
+
+-   To predict the future shooting incidents it can occur based on this time series data.
+-   To categorize the Victims based on Age group.
+    -   To identify the age group that are most impacted.
+-   To identify the Victim's or Perpetrator's Race , based on Race we can categorize it.
+-   To do some analysis for future planning of resources, to determine the area or precinct where incidents occurred.
+    -   To determine the additional police force required for future.
+    -   To determine the shooting prone locations.
+
+In my Solution, I will be using the approach to do some analysis on point *To predict future shooting incidents*.
+In this we will also do some analysis in identifying the nature of crime based on the variable *STATISTICAL_MURDER_FLAG* the Boolean variable to determine nature of crime.
+
+### Data Cleaning And Transformation
+
+Once we have read the data to the data frame or variable NYPD_Data , we need to clean the data and do some transformation.
+Remove unwanted variables(columns) like
+
+-   X_COORD_CD,Y_COORD_CD, Latitude
+
+-   Longitude,INCIDENT_KEY,Lon_Lat,LOC_OF_OCCUR_DESC
+
+-   LOC_CLASSFCTN_DESC,LOCATION_DESC,PERP_RACE
+
+-   PERP_SEX,PERP_AGE_GROUP,OCCUR_TIME,JURISDICTION_CODE
+
+-   We are going to keep only the variables that are required to the analysis.
+
+-   And we will group the data by OCCUR_DATE, BORO and PRECINCT
+
+-   And Get the count of total shooting incidents and total possible murder, and we will name this new variable as *murders* and *total_shootings* .
+
+-   Transform the occur date character to date object and break it down to month wise.
+
+Below code chunk performs the data cleaning and transformations.
+
+```{r cleaning, echo=FALSE, message=FALSE,warnings=FALSE}
+NYPD_Data <- NYPD_Data %>% 
+  select(-c(X_COORD_CD,Y_COORD_CD, Latitude, Longitude,INCIDENT_KEY,Lon_Lat,LOC_OF_OCCUR_DESC,LOC_CLASSFCTN_DESC,LOCATION_DESC,PERP_RACE,PERP_SEX,PERP_AGE_GROUP,OCCUR_TIME,JURISDICTION_CODE)) %>%
+  mutate(OCCUR_DATE=mdy(OCCUR_DATE))%>%arrange(OCCUR_DATE)
+
+
+NYPD_CRIME_BY_DATE_BORO_P <-NYPD_Data %>% group_by(OCCUR_DATE,BORO,PRECINCT)%>%
+summarise(murders=sum(STATISTICAL_MURDER_FLAG),total_shootings=n()) %>% ungroup()
+tail(NYPD_CRIME_BY_DATE_BORO_P)
+NYPD_CRIME_BY_DATE_BORO_P$Month <-as.Date(cut(NYPD_CRIME_BY_DATE_BORO_P$OCCUR_DATE,breaks ="month"))
+NYPD_MONTH_WISE<-NYPD_CRIME_BY_DATE_BORO_P %>% group_by(Month)%>%summarise(murders=sum(murders),total_shootings=n())
+ 
+```
+
+### Data Visualization
+
+After we have transformed the data we can visualize the data to understand the total number shooting incident occurred and also data time series data to see the possible murders from the total shootings.
+The below visualization is for Crime Rate in New York City every month starting from 2006 till date.
+
+```{r visual_1, echo=TRUE, message=FALSE,warnings=FALSE}
+
+NYPD_MONTH_WISE %>% filter(murders>0) %>%
+  ggplot(aes(Month)) +
+  geom_line(aes(y=murders,color="murders")) +
+  geom_point(aes(y=murders,color="murders"))+
+  geom_line(aes(y=total_shootings,color ="total_shootings")) +
+  geom_point(aes(y=total_shootings,color="total_shootings"))+
+  scale_y_log10()+
+  theme(legend.position = "bottom", axis.text.x = element_text(angle=90)) +
+  labs(title="Crime Rate in NY City",y=NULL)
+
+```
+
+From above data set , we can see the graph for the whole New York city.
+In case if we are only interested in further analyzing the data for a specific Boro , for instance lets say we want to check the same visualization from Crime Rate across Brooklyn .
+
+The below visualization is applied based on Boro Brooklyn.
+
+```{r visual2, echo=TRUE, message=FALSE,warnings=FALSE}
+
+boro_loc<-"BROOKLYN"
+NYPY_MONTH_WISE_BK<-NYPD_CRIME_BY_DATE_BORO_P %>% group_by(Month,BORO)%>%summarise(murders=sum(murders),total_shootings=n())%>%
+  select(Month,murders,total_shootings,BORO)%>%
+  ungroup()
+
+NYPY_MONTH_WISE_BK %>% filter(murders>0) %>%
+  filter(BORO == boro_loc)%>%
+  ggplot(aes(Month)) +
+  geom_line(aes(y=murders,color="murders")) +
+  geom_point(aes(y=murders,color="murders"))+
+  geom_line(aes(y=total_shootings,color ="total_shootings")) +
+  geom_point(aes(y=total_shootings,color="total_shootings"))+
+  scale_y_log10()+
+  theme(legend.position = "bottom", axis.text.x = element_text(angle=90)) +
+  labs(title="Crime Rate in BROOKLYN",y=NULL)
+
+```
+
+### Data Analysis
+
+After we have Visualized the Data, to check the number of murders and total shooting incidents occurred, we need to do some analysis on the NYPD shooting incident.
+
+We can also determine:-
+
+-   Maximum number of murders took place in New York City so far.
+-   Maximum date , when shooting incidents took place.
+-   To determine the top 3 Boro or location where maximum murders occurred in comparison with total shootings.
+-   To determine the Boro locations, which has less murders occurred.
+
+In the below R chunk , we are trying to do some analysis similar to the points mentioned above.
+
+We are adding variables to determine the new shootings and murders that occurred compared to previous month into a separate column as *new_murders* and *new_total_shootings* by using the lag function.
+
+Later we will determine the ratio, i.e murders occurred per total shootings , this ration will help us to determine the top crime location and least crime locations .
+
+```{r analysis_1, echo=TRUE, message=FALSE,warnings=FALSE}
+
+max(NYPD_MONTH_WISE$Month)
+
+max(NYPD_MONTH_WISE$murders) # Maximum murders 
+
+NYPY_MONTH_WISE_BK<-NYPY_MONTH_WISE_BK%>%
+  mutate(new_murders=murders -lag(murders),new_total_shootings = total_shootings - lag(total_shootings))
+
+NYPY_MONTH_WISE_BK %>% filter(new_murders>0) %>%
+  ggplot(aes(Month)) +
+  geom_line(aes(y=new_murders,color="new_murders")) +
+  geom_point(aes(y=new_murders,color="new_murders"))+
+  geom_line(aes(y=new_total_shootings,color ="new_total_shootings")) +
+  geom_point(aes(y=new_total_shootings,color="new_total_shootings"))+
+  scale_y_log10()+
+  theme(legend.position = "bottom", axis.text.x = element_text(angle=90)) +
+  labs(title="Crime Rate in NY City",y=NULL)
+
+NYPD_TOTALS_BY_B<-NYPY_MONTH_WISE_BK %>%
+  group_by(BORO)%>%
+  summarize(murders=max(murders),total_shootings=max(total_shootings),
+            murders_ration=100*murders/n(),shooting_ratio =100*total_shootings/n())%>%
+   filter(murders >0, total_shootings>0)
+
+## BOROS WITH LESS CRIME RATE 
+LESS_CRIME_D<-NYPD_TOTALS_BY_B%>%
+  slice_min(murders_ration,n=3)
+paged_table(LESS_CRIME_D)
+## BOROS WITH MORE CRIME RATE 
+TOP_CRIME_D<-NYPD_TOTALS_BY_B%>%
+  slice_max(murders_ration,n=3)
+library(rmarkdown)
+paged_table(TOP_CRIME_D)
+
+
+```
+
+### NYPD Data Modeling
+
+Further ,we can model the data and apply linear regression modeling to our NYPD transformed data set and it can help us to predict the possibility of murders that can occur based on total shooting incidents.
+We are trying to predict and see if total shootings increases will there be any chances of increase in the murders that can occur.
+
+In the below markdown we are only using the two variables murders and total shootings , and from the output you should be able to see that is an increase in murders linerarliy with increase of total shootings.
+
+```{r modeling ,echo=TRUE, message=FALSE,warnings=FALSE}
+
+mod <- lm( murders ~ total_shootings,data=NYPD_MONTH_WISE)
+summary(mod)
+
+NYPD_TOTALS_BY_B_W_PRED<-NYPD_MONTH_WISE%>%mutate(pred=predict(mod))
+
+NYPD_TOTALS_BY_B_W_PRED %>% 
+  ggplot() +
+  geom_point(aes(x=total_shootings,y=murders),color="blue")+
+  geom_point(aes(x=total_shootings,y=pred),color="red")
+```
+
+### Bias
+
+From the above output, it is evident that increase in shootings will potentially increases the chances of murders.
+However there can be bias to the above prediction, we might need to consider the additional variables or asking additional questions like
+
+-   1.Was there any patrolling officers were present at the time of shooting ?
+-   2.Time taken to respond to initial shooting reports, does the quick response time would prevent murders . Lot many such variables are missing in the given data set , and these variables helps us to reduce the bias currently exists.
+
+### Conclusion
+
+To conclude, in order to apply the data science on any data set , we need to follow some steps like Data cleaning, Data Transformation to convert some variables to correct type and to add some additional variables .
+And Once we have transformed we need to visualize the data using tools available.
+After applying visualization we should be albe to ask questions to analyze the results and apply modeling to in order to derivce some logical conclusion from the given data set.
+
+In our NYPD Shooting history example, we are able to conclude that, increase in number of shootings can also potentially increases the changes of murders nature of crime.
